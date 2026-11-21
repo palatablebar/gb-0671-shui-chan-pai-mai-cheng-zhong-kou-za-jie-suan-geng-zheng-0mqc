@@ -38,3 +38,29 @@
 ## 已知不覆盖
 
 无称重设备实时接入，采用现场导出文件。无支付执行，只生成可复核结算证据。
+
+## 保证金代偿模块（app/compensation/）
+
+| 环节 | 使用者动作 | 入口 | 核心文件 | 测试 |
+|---|---|---|---|---|
+| C1 三证读取 | 导入成交票/退款/保证金 CSV | `POST /api/comp/runs` | `app/compensation/reader.py` | `tests/test_comp_api.py` |
+| C2 归一隔离 | 行级校验、同号冲突裁决 | 同上 | `app/compensation/normalize.py` | `tests/test_comp_rules.py` |
+| C3 退款对账 | 退款与成交票逐张匹配 | 同上 | `app/compensation/rules.py::_pair_refunds` | `tests/test_comp_rules.py` |
+| C4 保证金代偿 | FIFO 垫付、四账与守恒 | 同上 | `app/compensation/rules.py::run_compensation` | `tests/test_comp_rules.py` |
+| C5 台账与封存 | 幂等占用、封存切换/回滚 | `publish`/`rollback` | `app/compensation/store.py` | `tests/test_comp_store.py` |
+| C6 封存包导出 | 下载含原始字节的 ZIP | `GET /api/comp/export/{run_id}` | `app/compensation/archive.py` | `tests/test_comp_api.py` |
+
+### 代偿陷阱登记
+
+| TRAP | 现象 | 朴素实现 | 本项目处理 | 测试 |
+|---|---|---|---|---|
+| MC-01 | 退款记录与成交票无法对应 | 静默丢弃或强行入账 | 待处理 `REFUND_UNMATCHED`，原值保留 | `test_dirty_unmatched_refund_held` |
+| MC-02 | 同一撤单重复到达 | 重复垫付 | 退款单号去重+同票多笔检测，重复进待处理 | `test_dirty_duplicate_refund_held` |
+| MC-03 | 退款买家/金额与成交票不符 | 错付卖家 | `REFUND_BUYER_MISMATCH`/`REFUND_AMOUNT_MISMATCH` 待处理 | `test_dirty_pending_categories` |
+| MC-04 | 保证金不足覆盖全部票 | 按票硬切或全部挂起 | 先核对先垫付，缺口票记卖家待补/买家欠款并阻断封存 | `test_dirty_margin_shortfall_split` |
+| MC-05 | 一笔保证金覆盖多张票 | 重复扣同一笔 | 资金池 FIFO + 占用明细到保证金级，五账守恒 | `test_fifo_deposit_spanning` |
+| MC-06 | 重跑重复使用保证金 | 台账翻倍 | `(run_id,deposit_id,ticket)` 唯一约束 + INSERT OR IGNORE | `test_rerun_does_not_reuse_margin_twice` |
+| MC-07 | 跨批次复用同笔保证金 | 双花 | 他批历史占用先扣除；封存前守恒检查 409 | `test_cross_run_shared_deposit_shortfall`、`test_seal_check_blocks_ledger_overrun` |
+| MC-08 | 封存切换中途失败 | 新旧版本都不生效 | 单事务提交，失败回滚旧版 `ACTIVE_SEAL_LOCKED` | `test_failed_switch_keeps_old_version` |
+| MC-09 | 原始证据丢失 | 只存计算结果 | 三张 CSV 原始字节入封存包 `raw/*.csv` | `test_export_bundle_keeps_raw_evidence` |
+| MC-10 | 旧编码中文表头 | 解码失败 | utf-8-sig/gb18030 双编码裁决 | `test_legacy_gb18030_chinese_headers` |

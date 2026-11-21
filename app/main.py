@@ -12,6 +12,7 @@ from app.archive import serialize
 @asynccontextmanager
 async def lifespan(app):
     store.save(DB_PATH,evaluate())
+    app.state.comp_db_path = DB_PATH
     yield
 app=FastAPI(title=META['title'],lifespan=lifespan)
 app.mount('/static',StaticFiles(directory=str(ROOT/'app/static')),name='static')
@@ -50,3 +51,5 @@ def export(run_id:str):
     return Response(serialize(result),media_type='application/zip',headers={'Content-Disposition':f'attachment; filename="{run_id}.zip"'})
 for key in MODULES:
     app.include_router(import_module(f'app.modules.{key}.handler').router)
+from app.compensation.handler import router as comp_router
+app.include_router(comp_router)

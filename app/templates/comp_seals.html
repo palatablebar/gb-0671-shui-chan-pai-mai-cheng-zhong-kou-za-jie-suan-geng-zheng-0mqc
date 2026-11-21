@@ -1,0 +1,32 @@
+{% extends 'base_comp.html' %}
+{% block comp_content %}
+<div class="kpis">
+  <div class="kpi"><small>封存版本</small><b>{{ seal_rows|length }}</b></div>
+  <div class="kpi"><small>当前生效</small><b style="font-size:13px">{% if active_seal %}{{ active_seal.seal_id }}{% else %}无{% endif %}</b></div>
+  <div class="kpi"><small>当前批号</small><b style="font-size:13px">{{ state.manifest.run_id }}</b></div>
+  <div class="kpi"><small>复核版本</small><b>v{{ state.revision }}</b></div>
+</div>
+<div id="feedback" role="status" aria-live="polite"></div>
+<section class="panel">
+  <div class="panel__head"><h2>封存版本线（切换失败自动恢复旧版；回滚后旧封存重新生效）</h2><span>只增不改</span></div>
+  <div class="scroll"><table class="ledger"><thead><tr><th>封存号</th><th>批号</th><th>封存摘要</th><th>封存时间</th><th>状态</th><th>被替代为</th><th>操作</th></tr></thead><tbody>
+  {% for s in seal_rows %}
+  <tr {% if s.active %}class="active-row"{% endif %}>
+    <td>{{ s.seal_id }}</td><td>{{ s.run_id }}</td><td class="mono" title="{{ s.seal_digest }}">{{ s.seal_digest[:24] }}…</td>
+    <td>{{ s.created_at }}</td><td>{% if s.active %}<span class="lamp"></span>生效中{% else %}已回滚{% endif %}</td>
+    <td>{{ s.superseded_by or '—' }}</td>
+    <td>{% if not s.active %}<button class="btn rollback" data-seal="{{ s.seal_id }}">恢复此版</button>{% else %}—{% endif %}</td>
+  </tr>
+  {% else %}<tr><td>尚无封存版本；在“代偿核对”页对无待处理的批次执行封存。</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel log-panel">
+  <div class="panel__head"><h2>规则说明</h2><span>可审计</span></div>
+  <ul class="checks">
+    <li><span class="lamp"></span>封存与切换在同一 SQLite 事务内完成，任一步失败整体回滚，旧版保持生效。</li>
+    <li><span class="lamp"></span>保证金台账只增不改，重跑同一批次命中幂等约束，不会重复占用同一笔保证金。</li>
+    <li><span class="lamp"></span>封存前复核资金守恒，发现保证金已被其他批次占用返回 409，拒绝切换。</li>
+    <li><span class="lamp"></span>封存包内含三张原始 CSV 字节、逐票四账、待处理与台账，原始成交与付款证据不丢失。</li>
+  </ul>
+</section>
+{% endblock %}

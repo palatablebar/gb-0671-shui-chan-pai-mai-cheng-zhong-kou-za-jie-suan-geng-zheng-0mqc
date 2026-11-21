@@ -1,0 +1,51 @@
+{% extends 'base_comp.html' %}
+{% macro comp_table(rows, cols) %}
+{% if rows %}<div class="scroll"><table class="ledger"><thead><tr>{% for col in cols %}<th>{{ cmeta.labels.get(col,col) }}</th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for col in cols %}<td tabindex="0" title="{{ row.get(col,'') }}" class="{% if col in ['payable','advanced','seller_due','buyer_debt','amount','prior_used','this_run_used','remaining'] %}num{% endif %}">{% if col=='sources' %}{% for s in row.get(col,[]) %}{{ s.deposit_id }}:{{ s.amount }}{% if not loop.last %}；{% endif %}{% endfor %}{% else %}{{ row.get(col,'') }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>{% else %}<p class="empty">无记录。</p>{% endif %}
+{% endmacro %}
+{% block comp_content %}
+<div class="kpis">
+  <div class="kpi"><small>受影响票</small><b>{{ state.comp_summary.affected_tickets }}</b></div>
+  <div class="kpi"><small>应付合计 CNY</small><b>{{ state.comp_summary.payable }}</b></div>
+  <div class="kpi"><small>实际垫付 CNY</small><b>{{ state.comp_summary.advanced }}</b></div>
+  <div class="kpi"><small>卖家待补 CNY</small><b>{{ state.comp_summary.seller_due }}</b></div>
+  <div class="kpi"><small>买家欠款 CNY</small><b>{{ state.comp_summary.buyer_debt }}</b></div>
+  <div class="kpi"><small>待处理项</small><b class="{% if state.pending %}warn-text{% endif %}">{{ state.comp_summary.pending }}</b></div>
+</div>
+<div id="feedback" role="status" aria-live="polite"></div>
+<div class="seal-bar panel">
+  <div class="panel__head"><h2>封存状态</h2><span id="seal-state">{% if active_seal %}生效中 {{ active_seal.seal_id }}{% else %}无生效封存{% endif %}</span></div>
+  <div class="panel__bar">
+    <button id="publish" class="btn primary" data-id="{{ state.manifest.run_id }}" {% if not state.sealable %}disabled title="存在待处理项，不可封存"{% endif %}>封存并切换生效</button>
+    <a class="btn" href="/api/comp/export/{{ state.manifest.run_id }}">下载封存包</a>
+    <button id="review" class="btn" data-id="{{ state.manifest.run_id }}">复核 (v{{ state.revision }})</button>
+    <span class="seal-verdict {% if state.sealable %}ok{% else %}blocked{% endif %}">{{ '可封存' if state.sealable else '待处理：先处理阻断项' }}</span>
+  </div>
+</div>
+<div class="grid">
+  <section class="panel primary-panel">
+    <div class="panel__head"><h2>逐票四账核对（按证据齐全时间先核对先垫付）</h2><span>{{ state.compensation|length }} 张</span></div>
+    {{ comp_table(state.compensation, ['ticket','seller_id','buyer_id','refund_id','payable','advanced','seller_due','buyer_debt','sources','status']) }}
+    <div class="panel__bar"><label>票号 <input id="filter" placeholder="筛选票号/卖家"></label><label>样例 <select id="dataset"><option value="dirty" {% if state.source=='dirty' %}selected{% endif %}>现场脏批</option><option value="clean" {% if state.source=='clean' %}selected{% endif %}>核验清批</option><option value="legacy" {% if state.source=='legacy' %}selected{% endif %}>旧编码批</option></select></label></div>
+  </section>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel__head"><h2>保证金资金台账</h2><span>{{ state.deposit_ledger|length }} 笔</span></div>
+      {{ comp_table(state.deposit_ledger, ['deposit_id','buyer_id','amount','prior_used','this_run_used','remaining']) }}
+    </section>
+    <section class="panel">
+      <div class="panel__head"><h2>守恒校验</h2><span>五账</span></div>
+      <ul class="checks">
+        {% for k,v in state.conservation.items() %}<li><span class="lamp {% if not v %}warn{% endif %}"></span>{{ {'payable_equals_parts':'应付=垫付+卖家待补','advance_equals_ledger':'垫付=台账占用','debt_equals_seller_due':'买家欠款=卖家待补','ledger_balanced':'缴存=历史+本批+余额','no_negative_remaining':'保证金余额无透支'}[k] }} <b>{{ '通过' if v else '失败' }}</b></li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+</div>
+<section class="panel log-panel">
+  <div class="panel__head"><h2>待处理项（退款无对应、重复撤单、保证金不足等，先保留不封存）</h2><span>{{ state.pending|length }} 项</span></div>
+  {{ comp_table(state.pending, ['table','line','id','code','detail']) }}
+</section>
+<section class="panel log-panel">
+  <div class="panel__head"><h2>隔离原始行（证据保留，含行号与原值）</h2><span>{{ state.quarantine|length }} 行</span></div>
+  {{ comp_table(state.quarantine, ['table','line','id','code','detail']) }}
+</section>
+{% endblock %}

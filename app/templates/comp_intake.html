@@ -1,0 +1,55 @@
+{% extends 'base_comp.html' %}
+{% block comp_content %}
+<div class="kpis">
+  <div class="kpi"><small>成交票证据</small><b>{{ state.counts.tickets.accepted }}</b></div>
+  <div class="kpi"><small>退款撤单证据</small><b>{{ state.counts.refunds.accepted }}</b></div>
+  <div class="kpi"><small>保证金证据</small><b>{{ state.counts.deposits.accepted }}</b></div>
+  <div class="kpi"><small>隔离行</small><b>{{ state.quarantine|length }}</b></div>
+  <div class="kpi"><small>待处理</small><b>{{ state.pending|length }}</b></div>
+  <div class="kpi"><small>批号</small><b style="font-size:13px">{{ state.manifest.run_id }}</b></div>
+</div>
+<div id="feedback" role="status" aria-live="polite"></div>
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>三证导入（原始字节整包封存）</h2><span>CSV</span></div>
+    <div class="source-input">
+      <summary>粘贴或上传三张证据 CSV，字段顺序须与样例一致</summary>
+      {% for table,label in [('tickets','成交票 tickets.csv'),('refunds','退款撤单 refunds.csv'),('deposits','保证金 deposits.csv')] %}
+      <label>{{ label }}<input type="file" class="csv-file" data-table="{{ table }}" accept=".csv"></label>
+      <textarea class="csv-text" data-table="{{ table }}" placeholder="粘贴 {{ table }} CSV（含表头）"></textarea>
+      {% endfor %}
+      <button id="import-csv" class="btn primary">运行代偿</button>
+      <span class="hint">空文本的表将回退到当前所选样例；三表必须同时可解析。</span>
+    </div>
+  </section>
+  <div class="stack">
+    <section class="panel">
+      <div class="panel__head"><h2>样例批次</h2><span id="dataset-name">{{ state.source }}</span></div>
+      <div class="panel__bar">
+        <form method="get" action="/comp-intake">
+          <select name="dataset">
+            <option value="dirty" {% if state.source=='dirty' %}selected{% endif %}>现场脏批（含重复撤单/无对应/保证金不足）</option>
+            <option value="clean" {% if state.source=='clean' %}selected{% endif %}>核验清批（可封存）</option>
+            <option value="legacy" {% if state.source=='legacy' %}selected{% endif %}>旧编码批（GB18030 中文表头）</option>
+          </select>
+          <button class="btn" type="submit">载入样例</button>
+        </form>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel__head"><h2>读取计数</h2><span>行守恒</span></div>
+      <table class="ledger"><thead><tr><th>证据表</th><th>输入</th><th>采纳</th><th>空行</th><th>重复表头</th><th>隔离</th><th>编码</th></tr></thead><tbody>
+        {% for t in ['tickets','refunds','deposits'] %}
+        <tr><td>{{ t }}</td><td class="num">{{ state.counts[t].input }}</td><td class="num">{{ state.counts[t].accepted }}</td><td class="num">{{ state.counts[t].blank }}</td><td class="num">{{ state.counts[t].repeated_header }}</td><td class="num">{{ state.counts[t].quarantined }}</td><td>{{ state.encodings[t] }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+    </section>
+  </div>
+</div>
+<section class="panel log-panel">
+  <div class="panel__head"><h2>隔离与待处理</h2><span>{{ state.quarantine|length + state.pending|length }} 项</span></div>
+  <div class="scroll"><table class="ledger"><thead><tr><th>证据表</th><th>行号</th><th>标识</th><th>原因码</th><th>原因</th></tr></thead><tbody>
+  {% for row in state.quarantine + state.pending %}<tr><td>{{ row.table }}</td><td class="num">{{ row.line }}</td><td>{{ row.id }}</td><td>{{ row.code }}</td><td>{{ row.detail }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}
